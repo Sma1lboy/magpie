@@ -1197,7 +1197,13 @@ func (r *subscriptionRun) ended(req *Request, said, stop string, ok bool) {
 func (b *subscriptionBridge) keepIdle(r *subscriptionRun, key, conv string) {
 	var drop []*subscriptionRun
 	b.mu.Lock()
+	// A run waits at one point in its conversation. Keeping it again must
+	// remove its earlier entry, but not a replacement now waiting there.
+	if b.idle[r.idleKey] == r {
+		delete(b.idle, r.idleKey)
+	}
 	if old := b.idle[key]; old != nil && old != r {
+		old.idleKey = ""
 		drop = append(drop, old)
 	}
 	b.idle[key] = r
@@ -1206,14 +1212,17 @@ func (b *subscriptionBridge) keepIdle(r *subscriptionRun, key, conv string) {
 		r.convKey = conv
 	}
 	for len(b.idle) > idleMost {
+		var oldestKey string
 		var oldest *subscriptionRun
-		for _, run := range b.idle {
+		for k, run := range b.idle {
 			if oldest == nil || run.idleAt.Before(oldest.idleAt) {
-				oldest = run
+				oldestKey, oldest = k, run
 			}
 		}
 		b.shelve(oldest)
-		delete(b.idle, oldest.idleKey)
+		// Delete the entry selected above even if its run's reverse key is
+		// stale: otherwise the loop keeps appending that run to drop forever.
+		delete(b.idle, oldestKey)
 		oldest.idleKey = ""
 		drop = append(drop, oldest)
 	}

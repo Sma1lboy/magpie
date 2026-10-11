@@ -195,6 +195,20 @@ A client that drops the images' message without adding text to a result
 goes on only when that message held images alone, no text. A tool result of an image alone (pi-ai's "(see attached image)")
 whose text is replaced by the line is not this shape, and starts anew.
 
+## Idle run ownership
+
+`keepIdle` keeps a run under one conversation key. Keeping that run again
+moves its entry; it removes the previous key only if that entry still
+belongs to the run. A displaced run cannot remove its replacement.
+Above `idleMost`, eviction removes the actual oldest map entry, even if
+its run's reverse key is stale. Each iteration therefore reduces the
+index, rather than repeatedly shelving and accumulating the same run
+while holding the bridge lock. Saved-session retention is unchanged.
+Verification: `TestClaudeIdleRunMoves`,
+`TestClaudeIdleReplacementKeepsItsKey`, `TestClaudeIdleEvictionMakesProgress`
+(post-GC heap growth during eviction), and `TestClaudeIdleRetainedMemory`
+(4,096 evictions with run-owned buffers, measured in an isolated process).
+
 ## Files a run leaves
 
 - Its session: `<config>/projects/<work project>/<session>.jsonl`, for
