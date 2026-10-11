@@ -205,6 +205,7 @@ its run's reverse key is stale. Each iteration therefore reduces the
 index, rather than repeatedly shelving and accumulating the same run
 while holding the bridge lock. Saved-session retention is unchanged.
 Verification: `TestClaudeIdleRunMoves`,
+`TestClaudeIdleCompletionOverlapsRewind`,
 `TestClaudeIdleReplacementKeepsItsKey`, `TestClaudeIdleEvictionMakesProgress`
 (post-GC heap growth during eviction), and `TestClaudeIdleRetainedMemory`
 (4,096 evictions with run-owned buffers, measured in an isolated process).

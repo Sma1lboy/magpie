@@ -1203,7 +1203,6 @@ func (b *subscriptionBridge) keepIdle(r *subscriptionRun, key, conv string) {
 		delete(b.idle, r.idleKey)
 	}
 	if old := b.idle[key]; old != nil && old != r {
-		old.idleKey = ""
 		drop = append(drop, old)
 	}
 	b.idle[key] = r

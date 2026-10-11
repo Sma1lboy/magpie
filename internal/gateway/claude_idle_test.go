@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -152,4 +154,49 @@ func TestClaudeIdleRetainedMemory(t *testing.T) {
 		}
 	}
 	runtime.KeepAlive(b)
+}
+
+// Exercise completion and rewind overlapping at their real methods, with
+// cancellation held by a segment send. The test never writes the idle map.
+func TestClaudeIdleCompletionOverlapsRewind(t *testing.T) {
+	b := idleTestBridge()
+	input, stdin := io.Pipe()
+	r := &subscriptionRun{bridge: b, token: "run", stdin: stdin, turnUUID: "turn", backKey: "before", segment: make(chan Event)}
+	r.timer = time.AfterFunc(time.Hour, r.abort)
+	b.runs[r.token] = r
+	done := make(chan struct{})
+	r.sending.Lock()
+	held := true
+	t.Cleanup(func() {
+		if held {
+			r.sending.Unlock()
+		}
+		stdin.Close()
+		input.Close()
+		r.abort()
+		<-done
+	})
+	go func() { defer close(done); r.letGo() }()
+	eventually(t, "rewind did not detach the segment", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.rewinding != nil && r.segment == nil
+	})
+	req := &Request{Tools: []Tool{{Name: "read"}}, Messages: []Message{{Role: "user", Parts: []Part{{Kind: Text, Text: "question"}}}}}
+	r.ended(req, "answer", "stop", true)
+	r.sending.Unlock()
+	held = false
+	var ctl struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.NewDecoder(input).Decode(&ctl); err != nil {
+		t.Fatal(err)
+	}
+	r.answered(json.RawMessage(fmt.Sprintf(`{"subtype":"success","request_id":%q,"response":{"rewound":true}}`, ctl.RequestID)))
+	<-done
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.idle) != 1 || b.idle["before"] != r {
+		t.Fatalf("completion and rewind left %d idle keys for one run", len(b.idle))
+	}
 }
